@@ -1,4 +1,4 @@
-aiogram
-flask
-aiohttp
-python-dotenv
+aiogram==3.10.0
+flask==3.0.0
+requests==2.31.0
+gunicorn==21.2.0
