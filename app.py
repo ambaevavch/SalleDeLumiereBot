@@ -1,34 +1,22 @@
-import asyncio
 import os
-from datetime import datetime, timedelta
+import asyncio
+from flask import Flask, request, jsonify
 from aiogram import Bot, Dispatcher, types
 from aiogram.filters import Command
 from aiogram.types import ChatPermissions
 from aiogram.enums import ChatMemberStatus
-from flask import Flask
-import threading
 
 # ===== ВАШИ ДАННЫЕ =====
 BOT_TOKEN = "8754058728:AAEc4420vw7LKJnScRKujASyt7lexQwYf8w"
 ADMIN_IDS = [613610675]
 # ========================
 
-# Создаем Flask приложение для Render
 app = Flask(__name__)
-
-@app.route('/')
-def home():
-    return "Бот работает!"
-
-@app.route('/health')
-def health():
-    return "OK"
-
-# Сам бот
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
 warnings_db = {}
 
+# ===== ХЕНДЛЕРЫ =====
 async def is_admin(message: types.Message) -> bool:
     if message.chat.type == "private":
         return message.from_user.id in ADMIN_IDS
@@ -40,7 +28,7 @@ async def is_admin(message: types.Message) -> bool:
 
 @dp.message(Command("start"))
 async def start_cmd(message: types.Message):
-    await message.reply("🤖 Бот администратор работает!")
+    await message.reply("🤖 Бот работает на Render!")
 
 @dp.message(Command("ban"))
 async def ban_cmd(message: types.Message):
@@ -49,7 +37,7 @@ async def ban_cmd(message: types.Message):
         return
     reply = message.reply_to_message
     if not reply:
-        await message.reply("⚠️ Ответьте на сообщение пользователя")
+        await message.reply("⚠️ Ответьте на сообщение")
         return
     try:
         await bot.ban_chat_member(message.chat.id, reply.from_user.id)
@@ -132,24 +120,41 @@ async def warn_cmd(message: types.Message):
     else:
         await message.reply(f"⚠️ {reply.from_user.full_name} варн {current}/3")
 
-# Функция запуска бота в отдельном потоке
-def run_bot():
-    asyncio.run(main())
+# ===== WEBHOOK =====
+@app.route(f'/webhook/{BOT_TOKEN}', methods=['POST'])
+async def webhook():
+    try:
+        update = types.Update(**request.get_json())
+        await dp.feed_update(bot, update)
+        return jsonify({"ok": True})
+    except Exception as e:
+        print(f"Error: {e}")
+        return jsonify({"ok": False}), 500
 
-async def main():
-    print("🚀 Бот запущен!")
-    await dp.start_polling(bot)
+@app.route('/healthcheck', methods=['GET'])
+def healthcheck():
+    return "OK", 200
 
-# Запускаем бота в фоновом потоке при старте Flask
-if __name__ != "__main__":
-    # Для Render - запускаем бота в отдельном потоке
-    bot_thread = threading.Thread(target=run_bot)
-    bot_thread.daemon = True
-    bot_thread.start()
+@app.route('/')
+def index():
+    return "Bot is running!"
 
+# ===== ЗАПУСК =====
+def setup_webhook():
+    """Устанавливает webhook при старте"""
+    webhook_url = f"https://{os.environ.get('RENDER_EXTERNAL_HOSTNAME')}/webhook/{BOT_TOKEN}"
+    try:
+        # Используем синхронный вызов для установки webhook
+        import requests
+        url = f"https://api.telegram.org/bot{BOT_TOKEN}/setWebhook?url={webhook_url}"
+        response = requests.get(url)
+        print(f"Webhook setup: {response.json()}")
+    except Exception as e:
+        print(f"Webhook error: {e}")
+
+# При запуске модуля устанавливаем webhook
+setup_webhook()
+
+# Для локального запуска
 if __name__ == "__main__":
-    # Локальный запуск
-    from threading import Thread
-    bot_thread = Thread(target=run_bot)
-    bot_thread.start()
-    app.run(host='0.0.0.0', port=8080)
+    app.run(host='0.0.0.0', port=int(os.environ.get('PORT', 8080)))
