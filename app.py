@@ -1,3 +1,12 @@
+import asyncio
+import os
+import sys
+import signal
+# Игнорируем сигналы, чтобы избежать ошибок в потоках
+signal.signal(signal.SIGINT, signal.SIG_IGN)
+signal.signal(signal.SIGTERM, signal.SIG_IGN)
+
+# Остальной ваш код...
 import os
 import asyncio
 from flask import Flask, request, jsonify
