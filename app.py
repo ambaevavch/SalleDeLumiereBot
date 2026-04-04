@@ -1,27 +1,15 @@
 import asyncio
 import os
-from datetime import datetime, timedelta
-from flask import Flask
 from aiogram import Bot, Dispatcher, types
 from aiogram.filters import Command
 from aiogram.types import ChatPermissions
 from aiogram.enums import ChatMemberStatus
-import nest_asyncio
-
-# Применяем nest_asyncio для решения проблемы с event loop
-nest_asyncio.apply()
+from datetime import datetime, timedelta
 
 # ===== КОНФИГУРАЦИЯ =====
 BOT_TOKEN = "8754058728:AAEc4420vw7LKJnScRKujASyt7lexQwYf8w"
 ADMIN_IDS = [613610675]
 # ========================
-
-flask_app = Flask(__name__)
-
-@flask_app.route('/')
-@flask_app.route('/healthcheck')
-def healthcheck():
-    return "OK", 200
 
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
@@ -45,8 +33,7 @@ async def start_cmd(message: types.Message):
         "• `/kick` - выгнать\n"
         "• `/mute 10m` - замутить\n"
         "• `/unmute` - размутить\n"
-        "• `/warn` - предупреждение\n"
-        "• `/info` - информация\n\n"
+        "• `/warn` - предупреждение\n\n"
         "**Как использовать:** Ответьте на сообщение и напишите команду",
         parse_mode="Markdown"
     )
@@ -150,38 +137,11 @@ async def warn_cmd(message: types.Message):
     else:
         await message.reply(f"⚠️ {reply.from_user.full_name} предупреждение {current}/3")
 
-@dp.message(Command("info"))
-async def info_cmd(message: types.Message):
-    if not await is_admin(message):
-        await message.reply("❌ Нет прав!")
-        return
-    reply = message.reply_to_message
-    if not reply:
-        await message.reply("⚠️ Ответьте на сообщение")
-        return
-    user = reply.from_user
-    warns = warnings_db.get(message.chat.id, {}).get(user.id, 0)
-    await message.reply(f"📋 **{user.full_name}**\nID: `{user.id}`\nПредупреждения: {warns}/3", parse_mode="Markdown")
-
 async def main():
     print("🚀 Бот запущен!")
     print(f"✅ Бот: @{(await bot.get_me()).username}")
     print(f"👥 Администраторы: {ADMIN_IDS}")
     await dp.start_polling(bot)
 
-# Запускаем бота в основном потоке
 if __name__ == "__main__":
-    # Запускаем бота в основном потоке
-    loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
-    
-    # Запускаем Flask в отдельном потоке
-    from threading import Thread
-    def run_flask():
-        flask_app.run(host='0.0.0.0', port=int(os.environ.get('PORT', 8080)))
-    
-    flask_thread = Thread(target=run_flask, daemon=True)
-    flask_thread.start()
-    
-    # Запускаем бота
-    loop.run_until_complete(main())
+    asyncio.run(main())
