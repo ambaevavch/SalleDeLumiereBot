@@ -1,12 +1,15 @@
 import asyncio
 import os
-from threading import Thread
 from datetime import datetime, timedelta
 from flask import Flask
 from aiogram import Bot, Dispatcher, types
 from aiogram.filters import Command
 from aiogram.types import ChatPermissions
 from aiogram.enums import ChatMemberStatus
+import nest_asyncio
+
+# Применяем nest_asyncio для решения проблемы с event loop
+nest_asyncio.apply()
 
 # ===== КОНФИГУРАЦИЯ =====
 BOT_TOKEN = "8754058728:AAEc4420vw7LKJnScRKujASyt7lexQwYf8w"
@@ -160,16 +163,25 @@ async def info_cmd(message: types.Message):
     warns = warnings_db.get(message.chat.id, {}).get(user.id, 0)
     await message.reply(f"📋 **{user.full_name}**\nID: `{user.id}`\nПредупреждения: {warns}/3", parse_mode="Markdown")
 
-async def run_bot():
+async def main():
     print("🚀 Бот запущен!")
     print(f"✅ Бот: @{(await bot.get_me()).username}")
+    print(f"👥 Администраторы: {ADMIN_IDS}")
     await dp.start_polling(bot)
 
-def start_bot_thread():
-    asyncio.run(run_bot())
-
+# Запускаем бота в основном потоке
 if __name__ == "__main__":
-    bot_thread = Thread(target=start_bot_thread, daemon=True)
-    bot_thread.start()
-    port = int(os.environ.get('PORT', 8080))
-    flask_app.run(host='0.0.0.0', port=port)
+    # Запускаем бота в основном потоке
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    
+    # Запускаем Flask в отдельном потоке
+    from threading import Thread
+    def run_flask():
+        flask_app.run(host='0.0.0.0', port=int(os.environ.get('PORT', 8080)))
+    
+    flask_thread = Thread(target=run_flask, daemon=True)
+    flask_thread.start()
+    
+    # Запускаем бота
+    loop.run_until_complete(main())
