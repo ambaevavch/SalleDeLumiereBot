@@ -1,11 +1,12 @@
-import asyncio
 import os
-from flask import Flask
+import asyncio
+from flask import Flask, request, jsonify
 from aiogram import Bot, Dispatcher, types
 from aiogram.filters import Command
 from aiogram.types import ChatPermissions
 from aiogram.enums import ChatMemberStatus
 from datetime import datetime, timedelta
+import requests
 
 # ===== КОНФИГУРАЦИЯ =====
 BOT_TOKEN = "8754058728:AAEc4420vw7LKJnScRKujASyt7lexQwYf8w"
@@ -13,16 +14,11 @@ ADMIN_IDS = [613610675]
 # ========================
 
 flask_app = Flask(__name__)
-
-@flask_app.route('/')
-@flask_app.route('/healthcheck')
-def healthcheck():
-    return "OK", 200
-
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
 warnings_db = {}
 
+# ===== ХЕНДЛЕРЫ КОМАНД =====
 async def is_admin(message: types.Message) -> bool:
     if message.chat.type == "private":
         return message.from_user.id in ADMIN_IDS
@@ -34,7 +30,17 @@ async def is_admin(message: types.Message) -> bool:
 
 @dp.message(Command("start"))
 async def start_cmd(message: types.Message):
-    await message.reply("🤖 Бот администратор работает!\n\nКоманды:\n/ban - забанить\n/kick - выгнать\n/mute - замутить\n/unmute - размутить\n/warn - предупредить")
+    await message.reply(
+        "🤖 **Бот администратор работает!**\n\n"
+        "**Команды:**\n"
+        "• `/ban` - забанить\n"
+        "• `/kick` - выгнать\n"
+        "• `/mute 10m` - замутить\n"
+        "• `/unmute` - размутить\n"
+        "• `/warn` - предупредить\n\n"
+        "**Как использовать:** Ответьте на сообщение и напишите команду",
+        parse_mode="Markdown"
+    )
 
 @dp.message(Command("ban"))
 async def ban_cmd(message: types.Message):
@@ -43,7 +49,7 @@ async def ban_cmd(message: types.Message):
         return
     reply = message.reply_to_message
     if not reply:
-        await message.reply("⚠️ Ответьте на сообщение")
+        await message.reply("⚠️ Ответьте на сообщение пользователя")
         return
     try:
         await bot.ban_chat_member(message.chat.id, reply.from_user.id)
@@ -135,28 +141,63 @@ async def warn_cmd(message: types.Message):
     else:
         await message.reply(f"⚠️ {reply.from_user.full_name} предупреждение {current}/3")
 
-# Отключаем обработку сигналов (решение проблемы с set_wakeup_fd)
-import signal
-try:
-    signal.signal(signal.SIGTERM, signal.SIG_IGN)
-    signal.signal(signal.SIGINT, signal.SIG_IGN)
-except:
-    pass
+@dp.message(Command("info"))
+async def info_cmd(message: types.Message):
+    if not await is_admin(message):
+        await message.reply("❌ Нет прав!")
+        return
+    reply = message.reply_to_message
+    if not reply:
+        await message.reply("⚠️ Ответьте на сообщение")
+        return
+    user = reply.from_user
+    warns = warnings_db.get(message.chat.id, {}).get(user.id, 0)
+    await message.reply(f"📋 **{user.full_name}**\nID: `{user.id}`\nПредупреждения: {warns}/3", parse_mode="Markdown")
 
-async def main():
-    print("🚀 Бот запущен!")
-    print(f"✅ Бот: @{(await bot.get_me()).username}")
-    print(f"👥 Администраторы: {ADMIN_IDS}")
-    await dp.start_polling(bot)
+# ===== WEBHOOK ENDPOINT =====
+@flask_app.route(f'/webhook/{BOT_TOKEN}', methods=['POST'])
+def webhook():
+    """Telegram отправляет обновления сюда"""
+    try:
+        update_data = request.get_json()
+        update = types.Update(**update_data)
+        # Создаём новый event loop для обработки
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        loop.run_until_complete(dp.feed_update(bot, update))
+        return jsonify({"ok": True}), 200
+    except Exception as e:
+        print(f"Webhook error: {e}")
+        return jsonify({"ok": False}), 500
+
+@flask_app.route('/healthcheck')
+def healthcheck():
+    return "OK", 200
+
+@flask_app.route('/')
+def index():
+    return "Bot is running!", 200
+
+# ===== УСТАНОВКА WEBHOOK =====
+def setup_webhook():
+    """Устанавливает webhook при запуске"""
+    hostname = os.environ.get('RENDER_EXTERNAL_HOSTNAME', 'localhost')
+    webhook_url = f"https://{hostname}/webhook/{BOT_TOKEN}"
+    
+    # Удаляем старый webhook
+    requests.get(f"https://api.telegram.org/bot{BOT_TOKEN}/deleteWebhook")
+    
+    # Устанавливаем новый
+    url = f"https://api.telegram.org/bot{BOT_TOKEN}/setWebhook?url={webhook_url}"
+    try:
+        response = requests.get(url)
+        print(f"Webhook setup response: {response.json()}")
+    except Exception as e:
+        print(f"Webhook setup error: {e}")
+
+# Устанавливаем webhook при запуске
+setup_webhook()
 
 if __name__ == "__main__":
-    # Запускаем бота в основном потоке
-    import threading
-    def run_bot():
-        asyncio.run(main())
-    
-    bot_thread = threading.Thread(target=run_bot, daemon=True)
-    bot_thread.start()
-    
     port = int(os.environ.get('PORT', 8080))
     flask_app.run(host='0.0.0.0', port=port)
