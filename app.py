@@ -1,5 +1,4 @@
 import os
-import json
 import requests
 from flask import Flask, request, jsonify
 from aiogram import Bot, Dispatcher, types
@@ -7,6 +6,7 @@ from aiogram.filters import Command
 from aiogram.types import ChatPermissions
 from aiogram.enums import ChatMemberStatus
 import asyncio
+import threading
 
 BOT_TOKEN = "8754058728:AAEc4420vw7LKJnScRKujASyt7lexQwYf8w"
 ADMIN_IDS = [613610675]
@@ -16,7 +16,10 @@ bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
 warnings_db = {}
 
-# ===== ХЕНДЛЕРЫ (они остаются async) =====
+# Глобальный event loop для бота
+loop = asyncio.new_event_loop()
+asyncio.set_event_loop(loop)
+
 async def is_admin(message: types.Message) -> bool:
     if message.chat.type == "private":
         return message.from_user.id in ADMIN_IDS
@@ -120,24 +123,18 @@ async def warn_cmd(message: types.Message):
     else:
         await message.reply(f"⚠️ {reply.from_user.full_name} варн {current}/3")
 
-# ===== ВЕБ-ЭНДПОИНТЫ (синхронные, без async) =====
+# Функция для запуска бота в фоновом потоке
+def run_bot():
+    loop.run_until_complete(dp.start_polling(bot))
+
+# Запускаем бота в отдельном потоке
+bot_thread = threading.Thread(target=run_bot, daemon=True)
+bot_thread.start()
+
 @app.route(f'/webhook/{BOT_TOKEN}', methods=['POST'])
 def webhook():
-    """Telegram отправляет обновления сюда (синхронная версия)"""
-    try:
-        update_data = request.get_json()
-        update = types.Update(**update_data)
-        
-        # Запускаем асинхронную обработку в синхронном контексте
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        loop.run_until_complete(dp.feed_update(bot, update))
-        loop.close()
-        
-        return jsonify({"ok": True}), 200
-    except Exception as e:
-        print(f"Error in webhook: {e}")
-        return jsonify({"ok": False}), 500
+    """Просто возвращаем OK — бот уже работает через polling"""
+    return jsonify({"ok": True}), 200
 
 @app.route('/healthcheck', methods=['GET'])
 def healthcheck():
@@ -145,23 +142,9 @@ def healthcheck():
 
 @app.route('/')
 def index():
-    return "Bot is running!", 200
+    return "Bot is running! (polling mode)", 200
 
-# ===== УСТАНОВКА WEBHOOK =====
-def setup_webhook():
-    """Устанавливает webhook при старте"""
-    hostname = os.environ.get('RENDER_EXTERNAL_HOSTNAME', 'localhost')
-    webhook_url = f"https://{hostname}/webhook/{BOT_TOKEN}"
-    
-    url = f"https://api.telegram.org/bot{BOT_TOKEN}/setWebhook?url={webhook_url}"
-    try:
-        response = requests.get(url)
-        print(f"Webhook setup response: {response.json()}")
-    except Exception as e:
-        print(f"Webhook setup error: {e}")
-
-# Устанавливаем webhook при запуске
-setup_webhook()
+print("🚀 Бот запущен в режиме polling!")
 
 if __name__ == "__main__":
     app.run(host='0.0.0.0', port=int(os.environ.get('PORT', 8080)))
