@@ -2,11 +2,17 @@ import asyncio
 import os
 import sys
 import signal
-# Игнорируем сигналы, чтобы избежать ошибок в потоках
+import logging
+import traceback
+
+# Настройка логирования
+logging.basicConfig(level=logging.DEBUG)
+logger = logging.getLogger(__name__)
+
+# Игнорируем сигналы
 signal.signal(signal.SIGINT, signal.SIG_IGN)
 signal.signal(signal.SIGTERM, signal.SIG_IGN)
 
-# Остальной ваш код...
 import os
 import asyncio
 from flask import Flask, request, jsonify
@@ -39,6 +45,7 @@ async def is_admin(message: types.Message) -> bool:
 
 @dp.message(Command("start"))
 async def start_cmd(message: types.Message):
+    logger.info(f"Получена команда /start от {message.from_user.id}")
     await message.reply(
         "🤖 **Бот администратор работает!**\n\n"
         "**Команды:**\n"
@@ -167,17 +174,30 @@ async def info_cmd(message: types.Message):
 @flask_app.route(f'/webhook/{BOT_TOKEN}', methods=['POST'])
 def webhook():
     """Telegram отправляет обновления сюда"""
+    logger.info("=== Webhook получил запрос ===")
+    logger.info(f"Headers: {dict(request.headers)}")
+    
     try:
         update_data = request.get_json()
+        logger.info(f"Update data: {update_data}")
+        
         update = types.Update(**update_data)
+        logger.info(f"Update создан: {update.update_id}")
+        
         # Создаём новый event loop для обработки
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
+        logger.info("Event loop создан")
+        
         loop.run_until_complete(dp.feed_update(bot, update))
+        logger.info("Update успешно обработан")
+        loop.close()
+        
         return jsonify({"ok": True}), 200
     except Exception as e:
-        print(f"Webhook error: {e}")
-        return jsonify({"ok": False}), 500
+        logger.error(f"!!! ОШИБКА В WEBHOOK: {e}")
+        logger.error(traceback.format_exc())
+        return jsonify({"ok": False, "error": str(e)}), 500
 
 @flask_app.route('/healthcheck')
 def healthcheck():
@@ -193,6 +213,8 @@ def setup_webhook():
     hostname = os.environ.get('RENDER_EXTERNAL_HOSTNAME', 'localhost')
     webhook_url = f"https://{hostname}/webhook/{BOT_TOKEN}"
     
+    logger.info(f"Настройка webhook на URL: {webhook_url}")
+    
     # Удаляем старый webhook
     requests.get(f"https://api.telegram.org/bot{BOT_TOKEN}/deleteWebhook")
     
@@ -200,13 +222,14 @@ def setup_webhook():
     url = f"https://api.telegram.org/bot{BOT_TOKEN}/setWebhook?url={webhook_url}"
     try:
         response = requests.get(url)
-        print(f"Webhook setup response: {response.json()}")
+        logger.info(f"Webhook setup response: {response.json()}")
     except Exception as e:
-        print(f"Webhook setup error: {e}")
+        logger.error(f"Webhook setup error: {e}")
 
 # Устанавливаем webhook при запуске
 setup_webhook()
 
 if __name__ == "__main__":
     port = int(os.environ.get('PORT', 8080))
+    logger.info(f"Запуск Flask на порту {port}")
     flask_app.run(host='0.0.0.0', port=port)
