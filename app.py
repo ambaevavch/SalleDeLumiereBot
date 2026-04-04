@@ -1,19 +1,18 @@
 import asyncio
 import os
-from threading import Thread
-from flask import Flask
 from aiogram import Bot, Dispatcher, types
 from aiogram.filters import Command
 from aiogram.types import ChatPermissions
 from aiogram.enums import ChatMemberStatus
 from datetime import datetime, timedelta
+from flask import Flask
 
 # ===== КОНФИГУРАЦИЯ =====
 BOT_TOKEN = "8754058728:AAEc4420vw7LKJnScRKujASyt7lexQwYf8w"
 ADMIN_IDS = [613610675]
 # ========================
 
-# Flask приложение
+# Flask для healthcheck
 flask_app = Flask(__name__)
 
 @flask_app.route('/')
@@ -37,17 +36,7 @@ async def is_admin(message: types.Message) -> bool:
 
 @dp.message(Command("start"))
 async def start_cmd(message: types.Message):
-    await message.reply(
-        "🤖 **Бот администратор работает!**\n\n"
-        "**Команды:**\n"
-        "• `/ban` - забанить\n"
-        "• `/kick` - выгнать\n"
-        "• `/mute 10m` - замутить\n"
-        "• `/unmute` - размутить\n"
-        "• `/warn` - предупреждение\n\n"
-        "**Как использовать:** Ответьте на сообщение и напишите команду",
-        parse_mode="Markdown"
-    )
+    await message.reply("🤖 Бот администратор работает!\n\nКоманды:\n/ban - забанить\n/kick - выгнать\n/mute - замутить\n/unmute - размутить\n/warn - предупредить")
 
 @dp.message(Command("ban"))
 async def ban_cmd(message: types.Message):
@@ -148,24 +137,22 @@ async def warn_cmd(message: types.Message):
     else:
         await message.reply(f"⚠️ {reply.from_user.full_name} предупреждение {current}/3")
 
-# Запуск бота (НЕ БЛОКИРУЕТ основной поток)
-async def run_bot():
+# Запуск бота
+async def main():
     print("🚀 Бот запущен!")
     print(f"✅ Бот: @{(await bot.get_me()).username}")
     print(f"👥 Администраторы: {ADMIN_IDS}")
     await dp.start_polling(bot)
 
-def run_bot_thread():
-    loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
-    loop.run_until_complete(run_bot())
+def start_bot():
+    asyncio.run(main())
 
-# ТОЧКА ВХОДА
 if __name__ == "__main__":
     # Запускаем бота в отдельном потоке
-    bot_thread = Thread(target=run_bot_thread, daemon=True)
+    import threading
+    bot_thread = threading.Thread(target=start_bot, daemon=True)
     bot_thread.start()
     
-    # Запускаем Flask в основном потоке (порт будет открыт сразу)
+    # Запускаем Flask
     port = int(os.environ.get('PORT', 8080))
     flask_app.run(host='0.0.0.0', port=port)
