@@ -13,7 +13,7 @@ BOT_TOKEN = "8754058728:AAEc4420vw7LKJnScRKujASyt7lexQwYf8w"
 ADMIN_IDS = [613610675]
 # ========================
 
-# Flask приложение для Render (чтобы был открытый порт)
+# Flask приложение
 flask_app = Flask(__name__)
 
 @flask_app.route('/')
@@ -148,21 +148,24 @@ async def warn_cmd(message: types.Message):
     else:
         await message.reply(f"⚠️ {reply.from_user.full_name} предупреждение {current}/3")
 
-# Запуск бота и Flask
+# Запуск бота (НЕ БЛОКИРУЕТ основной поток)
 async def run_bot():
     print("🚀 Бот запущен!")
     print(f"✅ Бот: @{(await bot.get_me()).username}")
     print(f"👥 Администраторы: {ADMIN_IDS}")
     await dp.start_polling(bot)
 
-def start_bot():
-    asyncio.run(run_bot())
+def run_bot_thread():
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    loop.run_until_complete(run_bot())
 
+# ТОЧКА ВХОДА
 if __name__ == "__main__":
     # Запускаем бота в отдельном потоке
-    bot_thread = Thread(target=start_bot, daemon=True)
+    bot_thread = Thread(target=run_bot_thread, daemon=True)
     bot_thread.start()
     
-    # Запускаем Flask сервер (он будет держать порт открытым)
+    # Запускаем Flask в основном потоке (порт будет открыт сразу)
     port = int(os.environ.get('PORT', 8080))
     flask_app.run(host='0.0.0.0', port=port)
