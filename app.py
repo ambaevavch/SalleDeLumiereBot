@@ -1,18 +1,17 @@
 import asyncio
 import os
+from flask import Flask
 from aiogram import Bot, Dispatcher, types
 from aiogram.filters import Command
 from aiogram.types import ChatPermissions
 from aiogram.enums import ChatMemberStatus
 from datetime import datetime, timedelta
-from flask import Flask
 
 # ===== КОНФИГУРАЦИЯ =====
 BOT_TOKEN = "8754058728:AAEc4420vw7LKJnScRKujASyt7lexQwYf8w"
 ADMIN_IDS = [613610675]
 # ========================
 
-# Flask для healthcheck
 flask_app = Flask(__name__)
 
 @flask_app.route('/')
@@ -20,7 +19,6 @@ flask_app = Flask(__name__)
 def healthcheck():
     return "OK", 200
 
-# Telegram бот
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
 warnings_db = {}
@@ -137,22 +135,28 @@ async def warn_cmd(message: types.Message):
     else:
         await message.reply(f"⚠️ {reply.from_user.full_name} предупреждение {current}/3")
 
-# Запуск бота
+# Отключаем обработку сигналов (решение проблемы с set_wakeup_fd)
+import signal
+try:
+    signal.signal(signal.SIGTERM, signal.SIG_IGN)
+    signal.signal(signal.SIGINT, signal.SIG_IGN)
+except:
+    pass
+
 async def main():
     print("🚀 Бот запущен!")
     print(f"✅ Бот: @{(await bot.get_me()).username}")
     print(f"👥 Администраторы: {ADMIN_IDS}")
     await dp.start_polling(bot)
 
-def start_bot():
-    asyncio.run(main())
-
 if __name__ == "__main__":
-    # Запускаем бота в отдельном потоке
+    # Запускаем бота в основном потоке
     import threading
-    bot_thread = threading.Thread(target=start_bot, daemon=True)
+    def run_bot():
+        asyncio.run(main())
+    
+    bot_thread = threading.Thread(target=run_bot, daemon=True)
     bot_thread.start()
     
-    # Запускаем Flask
     port = int(os.environ.get('PORT', 8080))
     flask_app.run(host='0.0.0.0', port=port)
