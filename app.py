@@ -1,5 +1,7 @@
 import asyncio
 import os
+from threading import Thread
+from flask import Flask
 from aiogram import Bot, Dispatcher, types
 from aiogram.filters import Command
 from aiogram.types import ChatPermissions
@@ -11,6 +13,15 @@ BOT_TOKEN = "8754058728:AAEc4420vw7LKJnScRKujASyt7lexQwYf8w"
 ADMIN_IDS = [613610675]
 # ========================
 
+# Flask приложение для Render (чтобы был открытый порт)
+flask_app = Flask(__name__)
+
+@flask_app.route('/')
+@flask_app.route('/healthcheck')
+def healthcheck():
+    return "OK", 200
+
+# Telegram бот
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
 warnings_db = {}
@@ -137,11 +148,21 @@ async def warn_cmd(message: types.Message):
     else:
         await message.reply(f"⚠️ {reply.from_user.full_name} предупреждение {current}/3")
 
-async def main():
+# Запуск бота и Flask
+async def run_bot():
     print("🚀 Бот запущен!")
     print(f"✅ Бот: @{(await bot.get_me()).username}")
     print(f"👥 Администраторы: {ADMIN_IDS}")
     await dp.start_polling(bot)
 
+def start_bot():
+    asyncio.run(run_bot())
+
 if __name__ == "__main__":
-    asyncio.run(main())
+    # Запускаем бота в отдельном потоке
+    bot_thread = Thread(target=start_bot, daemon=True)
+    bot_thread.start()
+    
+    # Запускаем Flask сервер (он будет держать порт открытым)
+    port = int(os.environ.get('PORT', 8080))
+    flask_app.run(host='0.0.0.0', port=port)
