@@ -1,26 +1,22 @@
 import os
-import asyncio
-import threading
+import json
+import requests
 from flask import Flask, request, jsonify
 from aiogram import Bot, Dispatcher, types
 from aiogram.filters import Command
 from aiogram.types import ChatPermissions
 from aiogram.enums import ChatMemberStatus
+import asyncio
 
-# ===== ВАШИ ДАННЫЕ =====
 BOT_TOKEN = "8754058728:AAEc4420vw7LKJnScRKujASyt7lexQwYf8w"
 ADMIN_IDS = [613610675]
-# ========================
 
-# Создаем Flask приложение
 app = Flask(__name__)
-
-# Инициализируем бота и диспетчер
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
 warnings_db = {}
 
-# ===== ВСЕ ВАШИ ХЕНДЛЕРЫ (КОМАНДЫ) =====
+# ===== ХЕНДЛЕРЫ (они остаются async) =====
 async def is_admin(message: types.Message) -> bool:
     if message.chat.type == "private":
         return message.from_user.id in ADMIN_IDS
@@ -32,7 +28,7 @@ async def is_admin(message: types.Message) -> bool:
 
 @dp.message(Command("start"))
 async def start_cmd(message: types.Message):
-    await message.reply("🤖 Бот администратор работает через webhook!")
+    await message.reply("🤖 Бот работает на Render!")
 
 @dp.message(Command("ban"))
 async def ban_cmd(message: types.Message):
@@ -41,7 +37,7 @@ async def ban_cmd(message: types.Message):
         return
     reply = message.reply_to_message
     if not reply:
-        await message.reply("⚠️ Ответьте на сообщение пользователя")
+        await message.reply("⚠️ Ответьте на сообщение")
         return
     try:
         await bot.ban_chat_member(message.chat.id, reply.from_user.id)
@@ -124,53 +120,48 @@ async def warn_cmd(message: types.Message):
     else:
         await message.reply(f"⚠️ {reply.from_user.full_name} варн {current}/3")
 
-# ===== WEBHOOK ENDPOINTS =====
+# ===== ВЕБ-ЭНДПОИНТЫ (синхронные, без async) =====
 @app.route(f'/webhook/{BOT_TOKEN}', methods=['POST'])
-async def webhook():
-    """Telegram отправляет обновления сюда"""
+def webhook():
+    """Telegram отправляет обновления сюда (синхронная версия)"""
     try:
         update_data = request.get_json()
         update = types.Update(**update_data)
-        await dp.feed_update(bot, update)
-        return jsonify({"status": "ok"}), 200
+        
+        # Запускаем асинхронную обработку в синхронном контексте
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        loop.run_until_complete(dp.feed_update(bot, update))
+        loop.close()
+        
+        return jsonify({"ok": True}), 200
     except Exception as e:
-        print(f"Ошибка в webhook: {e}")
-        return jsonify({"status": "error"}), 500
+        print(f"Error in webhook: {e}")
+        return jsonify({"ok": False}), 500
 
 @app.route('/healthcheck', methods=['GET'])
 def healthcheck():
-    """Для Render - проверка что бот жив"""
-    return jsonify({"status": "alive"}), 200
+    return "OK", 200
 
-@app.route('/', methods=['GET'])
+@app.route('/')
 def index():
-    """Главная страница для проверки"""
-    return "Бот работает! 👍", 200
+    return "Bot is running!", 200
 
-# ===== УСТАНОВКА WEBHOOK ПРИ ЗАПУСКЕ =====
-def set_webhook():
-    """Устанавливает webhook для бота"""
-    webhook_url = f"https://{os.environ.get('RENDER_EXTERNAL_HOSTNAME', 'localhost')}/webhook/{BOT_TOKEN}"
+# ===== УСТАНОВКА WEBHOOK =====
+def setup_webhook():
+    """Устанавливает webhook при старте"""
+    hostname = os.environ.get('RENDER_EXTERNAL_HOSTNAME', 'localhost')
+    webhook_url = f"https://{hostname}/webhook/{BOT_TOKEN}"
     
-    # Создаем новый event loop для синхронного вызова
-    loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
-    
+    url = f"https://api.telegram.org/bot{BOT_TOKEN}/setWebhook?url={webhook_url}"
     try:
-        loop.run_until_complete(bot.set_webhook(webhook_url))
-        print(f"✅ Webhook установлен на: {webhook_url}")
+        response = requests.get(url)
+        print(f"Webhook setup response: {response.json()}")
     except Exception as e:
-        print(f"❌ Ошибка установки webhook: {e}")
-    finally:
-        loop.close()
+        print(f"Webhook setup error: {e}")
 
-# Запускаем установку webhook при старте приложения
-# Render автоматически вызывает это при запуске
+# Устанавливаем webhook при запуске
+setup_webhook()
+
 if __name__ == "__main__":
-    # Локальный запуск (не на Render)
-    set_webhook()
-    port = int(os.environ.get('PORT', 8080))
-    app.run(host='0.0.0.0', port=port)
-else:
-    # На Render - устанавливаем webhook при импорте модуля
-    set_webhook()
+    app.run(host='0.0.0.0', port=int(os.environ.get('PORT', 8080)))
