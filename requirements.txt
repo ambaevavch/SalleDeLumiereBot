@@ -1,2 +1,3 @@
-aiogram
+iogram
 flask
+nest_asyncio
